@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="refresh" content="{{if .View}}300{{else}}5{{end}}">
+<title>{{with .View}}{{if .Summary.OpenPRs}}({{.Summary.OpenPRs}}) {{else}}✓ {{end}}{{end}}PR HUD</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #fff; --text: #1f2328; --muted: #656d76; --border: #d0d7de;
+  --accent: #0969da; --ok: #1a7f37; --bad: #cf222e; --warn: #9a6700; --tag: #eaeef2;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0d1117; --panel: #161b22; --text: #e6edf3; --muted: #8d96a0; --border: #30363d;
+    --accent: #4493f8; --ok: #3fb950; --bad: #f85149; --warn: #d29922; --tag: #21262d;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 960px; margin: 0 auto; padding: 24px 16px 48px; }
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-bottom: 20px; }
+h1 { font-size: 22px; margin: 0; }
+.meta { color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; }
+.meta form { margin: 0; }
+button { font: inherit; font-size: 13px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
+button:hover { border-color: var(--accent); }
+.banner { padding: 10px 14px; border-radius: 8px; border: 1px solid var(--bad); color: var(--bad); margin-bottom: 16px; font-size: 14px; }
+.banner.warn { border-color: var(--warn); color: var(--warn); }
+.banner ul { margin: 4px 0 0; padding-left: 18px; }
+.allclear { text-align: center; padding: 48px 16px; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 16px; }
+.allclear .big { font-size: 56px; line-height: 1; }
+.allclear h2 { margin: 12px 0 4px; color: var(--ok); }
+.allclear p { margin: 0; color: var(--muted); }
+.summary { color: var(--muted); margin: 0 0 12px; }
+details.repo, details.quiet { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
+summary { cursor: pointer; padding: 10px 14px; display: flex; align-items: center; gap: 8px; list-style: none; }
+summary::-webkit-details-marker { display: none; }
+summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
+details[open] > summary::before { transform: rotate(90deg); }
+.repo-name { font-weight: 600; }
+.count { margin-left: auto; background: var(--accent); color: #fff; border-radius: 999px; padding: 0 9px; font-size: 13px; font-weight: 600; }
+.tag { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--tag); color: var(--muted); border: 1px solid var(--border); white-space: nowrap; }
+ul.prs { list-style: none; margin: 0; padding: 0 14px 4px; }
+ul.prs li { padding: 8px 0 8px 22px; border-top: 1px solid var(--border); position: relative; }
+.ci { position: absolute; left: 2px; top: 9px; width: 14px; text-align: center; font-size: 13px; }
+.ci-success { color: var(--ok); }
+.ci-failure { color: var(--bad); }
+.ci-pending { color: var(--warn); }
+.ci-none { color: var(--border); }
+.pr-title { font-weight: 500; }
+.num { color: var(--muted); }
+.sub { color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 2px; }
+.review-approved { color: var(--ok); }
+.review-changes { color: var(--bad); }
+.review-required { color: var(--warn); }
+li.more { font-size: 13px; }
+details.quiet > summary { color: var(--muted); }
+ul.quiet-list { columns: 3 220px; list-style: none; margin: 0; padding: 0 14px 12px 36px; font-size: 14px; }
+ul.quiet-list li { break-inside: avoid; padding: 2px 0; }
+.loading { text-align: center; color: var(--muted); padding: 48px 0; }
+footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>PR HUD</h1>
+  <div class="meta">
+    {{with .View}}
+      <span>@{{.User}}</span>
+      <span title="{{abs .FetchedAt}}">refreshed {{ago .FetchedAt}}</span>
+    {{end}}
+    <form method="post" action="/refresh">
+      <button type="submit">Refresh now</button>
+    </form>
+  </div>
+</header>
+
+{{if .RefreshError}}
+<div class="banner">Last refresh failed: {{.RefreshError}}{{with .View}} (showing data from {{ago .FetchedAt}}){{end}}</div>
+{{end}}
+
+{{with .View}}
+  {{with .Errors}}
+  <div class="banner warn">Some watched repositories couldn't be loaded:
+    <ul>{{range .}}<li>{{.}}</li>{{end}}</ul>
+  </div>
+  {{end}}
+
+  {{if .Summary.OpenPRs}}
+    <p class="summary">{{.Summary.OpenPRs}} open pull {{plural .Summary.OpenPRs "request" "requests"}} across {{.Summary.ReposWithPRs}} {{plural .Summary.ReposWithPRs "repository" "repositories"}}</p>
+    {{range .Active}}
+    <details class="repo" open>
+      <summary>
+        <a class="repo-name" target="_blank" rel="noopener" href="{{.URL}}/pulls">{{.NameWithOwner}}</a>
+        {{if .Private}}<span class="tag">private</span>{{end}}
+        {{if .Archived}}<span class="tag">archived</span>{{end}}
+        {{if eq .Source "extra"}}<span class="tag">watched</span>{{end}}
+        <span class="count">{{.OpenPRCount}}</span>
+      </summary>
+      <ul class="prs">
+        {{range .PRs}}
+        <li>
+          <span class="ci {{ciClass .CIStatus}}" title="CI: {{ciLabel .CIStatus}}">{{ciIcon .CIStatus}}</span>
+          <a class="pr-title" target="_blank" rel="noopener" href="{{.URL}}">{{.Title}}</a> <span class="num">#{{.Number}}</span>
+          {{if .Draft}}<span class="tag">draft</span>{{end}}
+          {{if .AuthorIsBot}}<span class="tag">bot</span>{{end}}
+          <div class="sub">
+            <span>by {{.Author}}</span>
+            <span title="{{abs .CreatedAt}}">opened {{ago .CreatedAt}}</span>
+            <span title="{{abs .UpdatedAt}}">updated {{ago .UpdatedAt}}</span>
+            {{with .ReviewDecision}}<span class="{{reviewClass .}}">{{reviewLabel .}}</span>{{end}}
+          </div>
+        </li>
+        {{end}}
+        {{if .PRsTruncated}}
+        <li class="more"><a target="_blank" rel="noopener" href="{{.URL}}/pulls">and {{.MorePRs}} more on GitHub…</a></li>
+        {{end}}
+      </ul>
+    </details>
+    {{end}}
+  {{else}}
+    <section class="allclear">
+      <div class="big">🎉</div>
+      <h2>All clear</h2>
+      <p>No open pull requests across {{.Summary.Repos}} {{plural .Summary.Repos "repository" "repositories"}}.</p>
+    </section>
+  {{end}}
+
+  {{if .Quiet}}
+  <details class="quiet">
+    <summary>{{len .Quiet}} {{plural (len .Quiet) "repository" "repositories"}} with no open pull requests</summary>
+    <ul class="quiet-list">
+      {{range .Quiet}}
+      <li><a target="_blank" rel="noopener" href="{{.URL}}">{{if eq .Source "owned"}}{{.Name}}{{else}}{{.NameWithOwner}}{{end}}</a>{{if .Archived}} <span class="tag">archived</span>{{end}}</li>
+      {{end}}
+    </ul>
+  </details>
+  {{end}}
+{{else}}
+  <p class="loading">Fetching repositories from GitHub…</p>
+{{end}}
+
+<footer>
+  JSON: <a href="/api/v1/repos">/api/v1/repos</a> · <a href="/api/v1/prs">/api/v1/prs</a>
+  {{with .View}}{{if .RateLimit.Remaining}} · GitHub API budget: {{.RateLimit.Remaining}} points left{{end}}{{end}}
+</footer>
+</main>
+</body>
+</html>
