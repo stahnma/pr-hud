@@ -10,10 +10,13 @@ cache is in memory, and logs go to stdout.
 ## Run
 
 ```sh
-go build -o pr-hud .
-GITHUB_TOKEN=github_pat_xxx ./pr-hud
+cp pr-hud.env.example pr-hud.env   # set GITHUB_TOKEN in it
+make run
 # open http://127.0.0.1:8080
 ```
+
+`make install` puts the binary in `~/.local/bin` (override with `PREFIX=`).
+Run `make help` to see every target.
 
 A read-only fine-grained token is enough. Give it **Metadata**, **Pull
 requests**, and **Commit statuses** read access on the repos you want to see.
@@ -69,7 +72,7 @@ curl -s localhost:8080/api/v1/prs | jq -r '.prs[] | "\(.repo)#\(.number) \(.titl
 ## Development
 
 ```sh
-go test ./...
+make check   # gofmt check, go vet, go test
 ```
 
 Dependencies are standard library only.
