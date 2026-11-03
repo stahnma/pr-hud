@@ -21,7 +21,7 @@ check: vet test ## Fail if code is unformatted, then vet and test
 	@test -z "$$(gofmt -l .)" || { echo "unformatted files:"; gofmt -l .; exit 1; }
 
 run: build ## Build and run, loading pr-hud.env if present (override with ENVFILE=)
-	@if [ -f $(ENVFILE) ]; then set -a; . ./$(ENVFILE); set +a; fi; exec ./$(BINARY)
+	@if [ -f $(ENVFILE) ]; then set -a; . ./$(ENVFILE); set +a; fi; LISTEN_ADDR=0.0.0.0 exec ./$(BINARY)
 
 install: build ## Install to ~/.local/bin (override with PREFIX=)
 	install -D -m 0755 $(BINARY) $(PREFIX)/bin/$(BINARY)
