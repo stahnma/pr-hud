@@ -4,13 +4,14 @@ A small daemon that shows which of your GitHub repositories have open pull
 requests. Repos with open PRs are listed first and the rest are folded away.
 When nothing is open you get an "All clear 🎉".
 
-It runs as a single binary. Configuration comes from the environment, the
-cache is in memory, and logs go to stdout.
+It runs as a single binary. Configuration comes from the environment and,
+if present, a `.env` file in the working directory (real environment
+variables win). The cache is in memory, and logs go to stdout.
 
 ## Run
 
 ```sh
-cp pr-hud.env.example pr-hud.env   # set GITHUB_TOKEN in it
+cp .env.example .env   # set GITHUB_TOKEN in it
 make run
 # open http://127.0.0.1:8080
 ```
@@ -37,7 +38,7 @@ requests**, and **Commit statuses** read access on the repos you want to see.
 | `PORT` | `8080` | Bind port |
 | `LOG_LEVEL` | `info` | `debug`, `info`, `warn`, `error` |
 
-See `pr-hud.env.example`, or run `./pr-hud --help`.
+See `.env.example`, or run `./pr-hud --help`.
 
 The **Refresh now** button refreshes on demand. Requests that arrive within
 10 seconds of the last refresh reuse its result. A refresh costs roughly one
