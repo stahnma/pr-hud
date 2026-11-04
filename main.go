@@ -6,12 +6,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"github.com/joho/godotenv"
 
 	"github.com/stahnma/pr-hud/internal/config"
 	"github.com/stahnma/pr-hud/internal/github"
@@ -21,7 +24,9 @@ import (
 
 const usage = `pr-hud: a heads-up display for open pull requests.
 
-All configuration comes from environment variables:
+All configuration comes from environment variables. A .env file in the
+working directory is loaded first; variables already set in the environment
+take precedence over it.
 
   GITHUB_TOKEN            (required) GitHub token with read access to repos and PRs
   PRHUD_USER              user whose repos to list (default: the token's owner)
@@ -51,6 +56,9 @@ func main() {
 }
 
 func run() error {
+	if err := godotenv.Load(); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("loading .env: %w", err)
+	}
 	cfg, err := config.FromEnv(os.Getenv)
 	if err != nil {
 		return fmt.Errorf("configuration:\n%w", err)
