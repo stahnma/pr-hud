@@ -31,6 +31,7 @@ type Fetcher interface {
 	Viewer(ctx context.Context) (string, error)
 	OwnerRepos(ctx context.Context, login string, opt github.OwnerOptions) ([]github.Repo, error)
 	Repos(ctx context.Context, names []string) ([]github.Repo, []error)
+	AuthoredPRs(ctx context.Context, login string, opt github.OwnerOptions) ([]github.RepoPR, error)
 	RateLimit() github.RateLimit
 }
 
@@ -48,6 +49,8 @@ type Snapshot struct {
 	User      string
 	FetchedAt time.Time
 	Repos     []github.Repo
+	// Authored are open PRs opened by User, in any repo.
+	Authored []github.RepoPR
 	// Errors are non-fatal problems, such as an extra repo that wasn't found.
 	Errors    []string
 	RateLimit github.RateLimit
@@ -131,6 +134,7 @@ func (s *Store) Refresh(ctx context.Context) error {
 	s.log.Info("refreshed",
 		"repos", len(snap.Repos),
 		"open_prs", open,
+		"authored_prs", len(snap.Authored),
 		"problems", len(snap.Errors),
 		"took", time.Since(start).Round(time.Millisecond),
 		"rate_limit_remaining", snap.RateLimit.Remaining)
@@ -201,6 +205,12 @@ func (s *Store) fetch(ctx context.Context) (*Snapshot, error) {
 			snap.Errors = append(snap.Errors, e.Error())
 		}
 	}
+
+	authored, err := s.gh.AuthoredPRs(ctx, login, s.opt.Owner)
+	if err != nil {
+		snap.Errors = append(snap.Errors, fmt.Sprintf("pull requests opened by %s: %v", login, err))
+	}
+	snap.Authored = authored
 
 	snap.FetchedAt = time.Now()
 	snap.RateLimit = s.gh.RateLimit()

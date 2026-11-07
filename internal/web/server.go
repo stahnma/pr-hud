@@ -36,22 +36,38 @@ func New(store *hud.Store, log *slog.Logger) *Server {
 // Handler returns the HTTP routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", s.index)
+	mux.HandleFunc("GET /{$}", s.page(tabRepos))
+	mux.HandleFunc("GET /authored", s.page(tabAuthored))
 	mux.HandleFunc("POST /refresh", s.refreshForm)
 	mux.HandleFunc("GET /api/v1/repos", s.apiRepos)
 	mux.HandleFunc("GET /api/v1/prs", s.apiPRs)
+	mux.HandleFunc("GET /api/v1/authored", s.apiAuthored)
 	mux.HandleFunc("POST /api/v1/refresh", s.apiRefresh)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	return s.logRequests(mux)
 }
 
+// Page tabs.
+const (
+	tabRepos    = "repos"    // PRs against the user's repos
+	tabAuthored = "authored" // PRs the user opened
+)
+
+// tabPaths maps each tab to its URL path.
+var tabPaths = map[string]string{tabRepos: "/", tabAuthored: "/authored"}
+
 type pageData struct {
+	Tab          string
 	View         *hud.View
 	RefreshError string
 }
 
-func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	var data pageData
+func (s *Server) page(tab string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { s.render(w, tab) }
+}
+
+func (s *Server) render(w http.ResponseWriter, tab string) {
+	data := pageData{Tab: tab}
 	snap, lastErr := s.store.State()
 	if lastErr != nil {
 		data.RefreshError = lastErr.Error()
@@ -73,7 +89,11 @@ func (s *Server) index(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) refreshForm(w http.ResponseWriter, r *http.Request) {
 	s.refresh(r) // a failure is shown on the page via the store's last error
-	http.Redirect(w, r, "/", http.StatusSeeOther)
+	back, ok := tabPaths[r.FormValue("tab")]
+	if !ok {
+		back = "/"
+	}
+	http.Redirect(w, r, back, http.StatusSeeOther)
 }
 
 // refresh runs a refresh that survives the client going away.
@@ -150,6 +170,17 @@ func (s *Server) apiPRs(w http.ResponseWriter, r *http.Request) {
 	}{meta, v.PRs()})
 }
 
+func (s *Server) apiAuthored(w http.ResponseWriter, r *http.Request) {
+	v, meta, ok := s.apiView(w)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		apiMeta
+		PRs []hud.FlatPR `json:"prs"`
+	}{meta, v.Authored})
+}
+
 func (s *Server) apiRefresh(w http.ResponseWriter, r *http.Request) {
 	if err := s.refresh(r); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
@@ -186,7 +217,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 var funcs = template.FuncMap{
 	"ago": ago,
-	"abs": func(t time.Time) string { return t.Local().Format("2006-01-02 15:04 MST") },
+	// withoutAuthor blanks the author so the "pr" template leaves it out,
+	// for lists where every PR has the same author.
+	"withoutAuthor": func(p github.PullRequest) github.PullRequest { p.Author = ""; return p },
+	"abs":           func(t time.Time) string { return t.Local().Format("2006-01-02 15:04 MST") },
 	"plural": func(n int, one, many string) string {
 		if n == 1 {
 			return one

@@ -50,14 +50,26 @@ func TestBuildViewOrdering(t *testing.T) {
 	if v.Summary != (Summary{Repos: 5, ReposWithPRs: 3, OpenPRs: 4}) {
 		t.Errorf("summary = %+v", v.Summary)
 	}
+	if v.Authored == nil || len(v.Authored) != 0 {
+		t.Errorf("authored = %#v, want empty non-nil", v.Authored)
+	}
 	if prs := v.PRs(); len(prs) != 4 || prs[0].Number != 4 || prs[0].Repo != "me/botonly" {
 		t.Errorf("flat PRs = %+v", prs)
 	}
 }
 
 type fakeFetcher struct {
-	owners map[string][]github.Repo
-	calls  int
+	owners      map[string][]github.Repo
+	authored    []github.RepoPR
+	authoredErr error
+	calls       int
+}
+
+func (f *fakeFetcher) AuthoredPRs(_ context.Context, login string, _ github.OwnerOptions) ([]github.RepoPR, error) {
+	if login != "me" {
+		return nil, errors.New("unexpected login " + login)
+	}
+	return f.authored, f.authoredErr
 }
 
 func (f *fakeFetcher) Viewer(context.Context) (string, error) { return "me", nil }
@@ -139,5 +151,41 @@ func TestStoreKeepsSnapshotOnFailure(t *testing.T) {
 	snap, err := s.State()
 	if snap == nil || len(snap.Repos) != 1 || err == nil {
 		t.Errorf("State() = %v, %v; want old snapshot plus error", snap, err)
+	}
+}
+
+func TestBuildViewAuthored(t *testing.T) {
+	v := BuildView(&Snapshot{Authored: []github.RepoPR{
+		{Repo: "x/old", PullRequest: pr(1, false, time.Hour)},
+		{Repo: "y/new", PullRequest: pr(2, false, 2*time.Hour)},
+	}})
+	if v.Summary.AuthoredPRs != 2 || v.Authored[0].Repo != "y/new" || v.Authored[1].Repo != "x/old" {
+		t.Errorf("authored = %+v, summary = %+v", v.Authored, v.Summary)
+	}
+}
+
+func TestStoreAuthored(t *testing.T) {
+	f := &fakeFetcher{
+		owners:   map[string][]github.Repo{"me": {repo("me/a")}},
+		authored: []github.RepoPR{{Repo: "other/x", PullRequest: pr(5, false, 0)}},
+	}
+	s := NewStore(f, Options{Interval: time.Hour}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err := s.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ := s.State()
+	if len(snap.Authored) != 1 || snap.Authored[0].Repo != "other/x" || len(snap.Errors) != 0 {
+		t.Errorf("snap = %+v", snap)
+	}
+
+	// A failed search is reported but doesn't fail the refresh.
+	f.authoredErr = errors.New("search broke")
+	s.lastDone = time.Time{}
+	if err := s.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	snap, _ = s.State()
+	if len(snap.Repos) != 1 || len(snap.Errors) != 1 || !strings.Contains(snap.Errors[0], "search broke") {
+		t.Errorf("snap = %+v", snap)
 	}
 }

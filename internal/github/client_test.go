@@ -118,3 +118,41 @@ func TestHTTPError(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestAuthoredPRs(t *testing.T) {
+	c := fakeServer(t, func(req gqlRequest) string {
+		q, _ := req.Variables["q"].(string)
+		if !strings.Contains(q, "is:pr is:open author:me") || !strings.Contains(q, "is:public") || strings.Contains(q, "archived:") {
+			t.Errorf("search query = %q", q)
+		}
+		if req.Variables["cursor"] == "c1" {
+			return `{"data":{"search":{"pageInfo":{"hasNextPage":false},"nodes":[
+ {"number":3,"title":"Second","url":"u3","createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z",
+  "author":{"login":"me","__typename":"User"},"repository":{"nameWithOwner":"b/two","url":"https://github.com/b/two"},"commits":{"nodes":[]}}
+]}}}`
+		}
+		return `{"data":{"rateLimit":{"remaining":4000,"resetAt":"2026-01-01T00:00:00Z"},"search":{"pageInfo":{"hasNextPage":true,"endCursor":"c1"},"nodes":[
+ {"number":9,"title":"First","url":"u9","isDraft":true,"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-02T00:00:00Z",
+  "reviewDecision":"APPROVED","author":{"login":"me","__typename":"User"},"repository":{"nameWithOwner":"a/one","url":"https://github.com/a/one"},
+  "commits":{"nodes":[{"commit":{"statusCheckRollup":{"state":"PENDING"}}}]}},
+ {}
+]}}}`
+	})
+
+	prs, err := c.AuthoredPRs(context.Background(), "me", OwnerOptions{IncludeArchived: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(prs) != 2 {
+		t.Fatalf("prs = %+v", prs)
+	}
+	if p := prs[0]; p.Repo != "a/one" || p.RepoURL != "https://github.com/a/one" || p.Number != 9 || !p.Draft || p.CIStatus != "PENDING" || p.ReviewDecision != "APPROVED" {
+		t.Errorf("first = %+v", p)
+	}
+	if prs[1].Repo != "b/two" || prs[1].Number != 3 {
+		t.Errorf("second = %+v", prs[1])
+	}
+	if c.RateLimit().Remaining != 4000 {
+		t.Errorf("rate limit = %+v", c.RateLimit())
+	}
+}
