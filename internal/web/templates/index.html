@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="{{if .View}}300{{else}}5{{end}}">
-<title>{{with .View}}{{if .Summary.OpenPRs}}({{.Summary.OpenPRs}}) {{else}}✓ {{end}}{{end}}PR HUD</title>
+<title>{{with .View}}{{$n := .Summary.OpenPRs}}{{if eq $.Tab "authored"}}{{$n = .Summary.AuthoredPRs}}{{end}}{{if $n}}({{$n}}) {{else}}✓ {{end}}{{end}}{{if eq .Tab "authored"}}My PRs · {{end}}PR HUD</title>
 <style>
 :root {
   --bg: #f6f7f9; --panel: #fff; --text: #1f2328; --muted: #656d76; --border: #d0d7de;
@@ -28,6 +28,14 @@ h1 { font-size: 22px; margin: 0; }
 .meta form { margin: 0; }
 button { font: inherit; font-size: 13px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); cursor: pointer; }
 button:hover { border-color: var(--accent); }
+nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 0 0 16px; }
+nav.tabs a { padding: 6px 12px; margin-bottom: -1px; border: 1px solid transparent; border-radius: 8px 8px 0 0; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+nav.tabs a:hover { color: var(--text); text-decoration: none; }
+nav.tabs a.active { color: var(--text); font-weight: 600; background: var(--panel); border-color: var(--border); border-bottom-color: var(--panel); }
+nav.tabs .n { font-size: 12px; background: var(--tag); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; font-weight: 500; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
+.panel ul.prs li:first-child { border-top: 0; }
+.pr-repo { color: var(--muted); font-weight: 500; }
 .banner { padding: 10px 14px; border-radius: 8px; border: 1px solid var(--bad); color: var(--bad); margin-bottom: 16px; font-size: 14px; }
 .banner.warn { border-color: var(--warn); color: var(--warn); }
 .banner ul { margin: 4px 0 0; padding-left: 18px; }
@@ -75,6 +83,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
       <span title="{{abs .FetchedAt}}">refreshed {{ago .FetchedAt}}</span>
     {{end}}
     <form method="post" action="/refresh">
+      <input type="hidden" name="tab" value="{{.Tab}}">
       <button type="submit">Refresh now</button>
     </form>
   </div>
@@ -85,11 +94,35 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
 {{end}}
 
 {{with .View}}
+  <nav class="tabs">
+    <a href="/" {{if ne $.Tab "authored"}}class="active" aria-current="page"{{end}}>My repos <span class="n">{{.Summary.OpenPRs}}</span></a>
+    <a href="/authored" {{if eq $.Tab "authored"}}class="active" aria-current="page"{{end}}>Opened by me <span class="n">{{.Summary.AuthoredPRs}}</span></a>
+  </nav>
+
   {{with .Errors}}
-  <div class="banner warn">Some watched repositories couldn't be loaded:
+  <div class="banner warn">Some data couldn't be loaded:
     <ul>{{range .}}<li>{{.}}</li>{{end}}</ul>
   </div>
   {{end}}
+
+  {{if eq $.Tab "authored"}}
+  {{if .Authored}}
+    <p class="summary">{{len .Authored}} open pull {{plural (len .Authored) "request" "requests"}} opened by @{{.User}}</p>
+    <section class="panel">
+      <ul class="prs">
+        {{range .Authored}}
+        <li><a class="pr-repo" target="_blank" rel="noopener" href="{{.RepoURL}}/pulls">{{.Repo}}</a> · {{template "pr" (withoutAuthor .PullRequest)}}</li>
+        {{end}}
+      </ul>
+    </section>
+  {{else}}
+    <section class="allclear">
+      <div class="big">🎉</div>
+      <h2>All clear</h2>
+      <p>@{{.User}} has no open pull requests.</p>
+    </section>
+  {{end}}
+  {{else}}
 
   {{if .Summary.OpenPRs}}
     <p class="summary">{{.Summary.OpenPRs}} open pull {{plural .Summary.OpenPRs "request" "requests"}} across {{.Summary.ReposWithPRs}} {{plural .Summary.ReposWithPRs "repository" "repositories"}}</p>
@@ -104,18 +137,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
       </summary>
       <ul class="prs">
         {{range .PRs}}
-        <li>
-          <span class="ci {{ciClass .CIStatus}}" title="CI: {{ciLabel .CIStatus}}">{{ciIcon .CIStatus}}</span>
-          <a class="pr-title" target="_blank" rel="noopener" href="{{.URL}}">{{.Title}}</a> <span class="num">#{{.Number}}</span>
-          {{if .Draft}}<span class="tag">draft</span>{{end}}
-          {{if .AuthorIsBot}}<span class="tag">bot</span>{{end}}
-          <div class="sub">
-            <span>by {{.Author}}</span>
-            <span title="{{abs .CreatedAt}}">opened {{ago .CreatedAt}}</span>
-            <span title="{{abs .UpdatedAt}}">updated {{ago .UpdatedAt}}</span>
-            {{with .ReviewDecision}}<span class="{{reviewClass .}}">{{reviewLabel .}}</span>{{end}}
-          </div>
-        </li>
+        <li>{{template "pr" .}}</li>
         {{end}}
         {{if .PRsTruncated}}
         <li class="more"><a target="_blank" rel="noopener" href="{{.URL}}/pulls">and {{.MorePRs}} more on GitHub…</a></li>
@@ -141,14 +163,28 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
     </ul>
   </details>
   {{end}}
+  {{end}}{{/* tab */}}
 {{else}}
   <p class="loading">Fetching repositories from GitHub…</p>
 {{end}}
 
 <footer>
-  JSON: <a href="/api/v1/repos">/api/v1/repos</a> · <a href="/api/v1/prs">/api/v1/prs</a>
+  JSON: <a href="/api/v1/repos">/api/v1/repos</a> · <a href="/api/v1/prs">/api/v1/prs</a> · <a href="/api/v1/authored">/api/v1/authored</a>
   {{with .View}}{{if .RateLimit.Remaining}} · GitHub API budget: {{.RateLimit.Remaining}} points left{{end}}{{end}}
 </footer>
 </main>
 </body>
 </html>
+
+{{define "pr"}}
+<span class="ci {{ciClass .CIStatus}}" title="CI: {{ciLabel .CIStatus}}">{{ciIcon .CIStatus}}</span>
+<a class="pr-title" target="_blank" rel="noopener" href="{{.URL}}">{{.Title}}</a> <span class="num">#{{.Number}}</span>
+{{if .Draft}}<span class="tag">draft</span>{{end}}
+{{if .AuthorIsBot}}<span class="tag">bot</span>{{end}}
+<div class="sub">
+  {{with .Author}}<span>by {{.}}</span>{{end}}
+  <span title="{{abs .CreatedAt}}">opened {{ago .CreatedAt}}</span>
+  <span title="{{abs .UpdatedAt}}">updated {{ago .UpdatedAt}}</span>
+  {{with .ReviewDecision}}<span class="{{reviewClass .}}">{{reviewLabel .}}</span>{{end}}
+</div>
+{{end}}

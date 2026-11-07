@@ -15,7 +15,10 @@ import (
 	"github.com/stahnma/pr-hud/internal/hud"
 )
 
-type fakeFetcher struct{ repos []github.Repo }
+type fakeFetcher struct {
+	repos    []github.Repo
+	authored []github.RepoPR
+}
 
 func (f fakeFetcher) Viewer(context.Context) (string, error) { return "me", nil }
 func (f fakeFetcher) RateLimit() github.RateLimit            { return github.RateLimit{Remaining: 100} }
@@ -23,12 +26,20 @@ func (f fakeFetcher) OwnerRepos(context.Context, string, github.OwnerOptions) ([
 	return f.repos, nil
 }
 func (f fakeFetcher) Repos(context.Context, []string) ([]github.Repo, []error) { return nil, nil }
+func (f fakeFetcher) AuthoredPRs(context.Context, string, github.OwnerOptions) ([]github.RepoPR, error) {
+	return f.authored, nil
+}
 
 var quietLog = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func newServer(t *testing.T, repos ...github.Repo) http.Handler {
 	t.Helper()
-	store := hud.NewStore(fakeFetcher{repos}, hud.Options{Interval: time.Hour}, quietLog)
+	return newServerWith(t, fakeFetcher{repos: repos})
+}
+
+func newServerWith(t *testing.T, f fakeFetcher) http.Handler {
+	t.Helper()
+	store := hud.NewStore(f, hud.Options{Interval: time.Hour}, quietLog)
 	if err := store.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
@@ -43,6 +54,10 @@ func get(t *testing.T, h http.Handler, path string) *httptest.ResponseRecorder {
 }
 
 var now = time.Now()
+
+var mine = github.RepoPR{Repo: "upstream/proj", RepoURL: "https://github.com/upstream/proj", PullRequest: github.PullRequest{
+	Number: 42, Title: "Fix the thing", URL: "https://github.com/upstream/proj/pull/42", Author: "me", UpdatedAt: now, ReviewDecision: "CHANGES_REQUESTED",
+}}
 
 var (
 	busy = github.Repo{NameWithOwner: "me/busy", Name: "busy", URL: "https://github.com/me/busy", OpenPRCount: 2, PRs: []github.PullRequest{
@@ -132,5 +147,62 @@ func TestAPIWarmingUp(t *testing.T) {
 	rec := get(t, New(store, quietLog).Handler(), "/api/v1/repos")
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Errorf("status = %d", rec.Code)
+	}
+}
+
+func TestAuthoredTab(t *testing.T) {
+	h := newServerWith(t, fakeFetcher{repos: []github.Repo{busy}, authored: []github.RepoPR{mine}})
+
+	body := get(t, h, "/authored").Body.String()
+	for _, want := range []string{"upstream/proj", "Fix the thing", "#42", "changes requested", `href="https://github.com/upstream/proj/pulls"`, "(1) My PRs · PR HUD", `name="tab" value="authored"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("authored page missing %q", want)
+		}
+	}
+	if strings.Contains(body, "me/busy</a>") {
+		t.Error("authored page shows repo view")
+	}
+	if strings.Contains(body, "<span>by me</span>") {
+		t.Error("authored page shows the author")
+	}
+
+	// The repos tab doesn't show authored PRs but links to them, and keeps authors.
+	body = get(t, h, "/").Body.String()
+	if strings.Contains(body, "Fix the thing") || !strings.Contains(body, `href="/authored"`) || !strings.Contains(body, "<span>by alice</span>") {
+		t.Error("repos tab should link to, not show, authored PRs")
+	}
+}
+
+func TestAuthoredTabEmpty(t *testing.T) {
+	body := get(t, newServer(t, busy), "/authored").Body.String()
+	if !strings.Contains(body, "has no open pull requests") {
+		t.Error("expected empty-state message")
+	}
+}
+
+func TestRefreshRedirectsToTab(t *testing.T) {
+	h := newServer(t, idle)
+	for tab, want := range map[string]string{"authored": "/authored", "repos": "/", "https://evil.example": "/"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/refresh", strings.NewReader("tab="+tab))
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		h.ServeHTTP(rec, req)
+		if got := rec.Header().Get("Location"); got != want {
+			t.Errorf("tab=%q: Location = %q, want %q", tab, got, want)
+		}
+	}
+}
+
+func TestAPIAuthored(t *testing.T) {
+	var resp struct {
+		Summary hud.Summary  `json:"summary"`
+		PRs     []hud.FlatPR `json:"prs"`
+	}
+	h := newServerWith(t, fakeFetcher{authored: []github.RepoPR{mine}})
+	if err := json.Unmarshal(get(t, h, "/api/v1/authored").Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.PRs) != 1 || resp.PRs[0].Repo != "upstream/proj" || resp.PRs[0].Number != 42 || resp.Summary.AuthoredPRs != 1 {
+		t.Errorf("resp = %+v", resp)
 	}
 }

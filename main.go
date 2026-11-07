@@ -29,7 +29,7 @@ working directory is loaded first; variables already set in the environment
 take precedence over it.
 
   GITHUB_TOKEN            (required) GitHub token with read access to repos and PRs
-  PRHUD_USER              user whose repos to list (default: the token's owner)
+  PRHUD_USER              user whose repos and PRs to list (default: the token's owner)
   PRHUD_EXTRA_REPOS       extra repos to watch: "owner/repo,org/*" (comma or space separated)
   PRHUD_INCLUDE_PRIVATE   include private repos (default: true)
   PRHUD_INCLUDE_ARCHIVED  include archived repos (default: true)

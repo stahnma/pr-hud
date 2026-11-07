@@ -45,6 +45,13 @@ type PullRequest struct {
 	CIStatus string `json:"ci_status,omitempty"`
 }
 
+// RepoPR is a pull request tagged with the repo it belongs to.
+type RepoPR struct {
+	Repo    string `json:"repo"`
+	RepoURL string `json:"repo_url,omitempty"`
+	PullRequest
+}
+
 // RateLimit is the GraphQL rate limit as of the last query.
 type RateLimit struct {
 	Remaining int       `json:"remaining"`
@@ -81,7 +88,12 @@ type gqlPR struct {
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 	ReviewDecision string
-	Author         *struct {
+	// Repository is only selected by the search query.
+	Repository *struct {
+		NameWithOwner string
+		URL           string
+	}
+	Author *struct {
 		Login    string
 		Typename string `json:"__typename"`
 	}

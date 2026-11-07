@@ -21,6 +21,14 @@ const (
 	repoBatchSize = 25
 )
 
+// prFragment selects everything pr-hud shows for a pull request.
+const prFragment = `
+fragment PRFields on PullRequest {
+  number title url isDraft createdAt updatedAt reviewDecision
+  author { login __typename }
+  commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
+}`
+
 // repoFragment selects everything pr-hud shows for a repo. Up to 25 PRs are
 // fetched per repo; totalCount reports the real number.
 const repoFragment = `
@@ -29,13 +37,9 @@ fragment RepoFields on Repository {
   owner { login }
   pullRequests(states: OPEN, first: 25, orderBy: {field: UPDATED_AT, direction: DESC}) {
     totalCount
-    nodes {
-      number title url isDraft createdAt updatedAt reviewDecision
-      author { login __typename }
-      commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
-    }
+    nodes { ...PRFields }
   }
-}`
+}` + prFragment
 
 const ownerReposQuery = `
 query($login: String!, $cursor: String, $isFork: Boolean, $privacy: RepositoryPrivacy) {
@@ -47,6 +51,19 @@ query($login: String!, $cursor: String, $isFork: Boolean, $privacy: RepositoryPr
     }
   }
 }` + repoFragment
+
+// searchPRsQuery finds pull requests matching a search string.
+const searchPRsQuery = `
+query($q: String!, $cursor: String) {
+  rateLimit { remaining resetAt }
+  search(query: $q, type: ISSUE, first: 50, after: $cursor) {
+    pageInfo { hasNextPage endCursor }
+    nodes { ... on PullRequest { ...PRFields repository { nameWithOwner url } } }
+  }
+}` + prFragment
+
+// maxSearchPages caps how many pages of search results are fetched.
+const maxSearchPages = 10
 
 // Client talks to the GitHub GraphQL API.
 type Client struct {
@@ -141,6 +158,53 @@ func (c *Client) OwnerRepos(ctx context.Context, login string, opt OwnerOptions)
 		}
 		vars["cursor"] = conn.PageInfo.EndCursor
 	}
+}
+
+// AuthoredPRs lists open pull requests opened by login in any repo the token
+// can see, most recently updated first. opt filters by repo the same way it
+// does for OwnerRepos (forks are not filtered).
+func (c *Client) AuthoredPRs(ctx context.Context, login string, opt OwnerOptions) ([]RepoPR, error) {
+	q := fmt.Sprintf("is:pr is:open author:%s sort:updated-desc", login)
+	if !opt.IncludePrivate {
+		q += " is:public"
+	}
+	if !opt.IncludeArchived {
+		q += " archived:false"
+	}
+	vars := map[string]any{"q": q}
+
+	prs := []RepoPR{}
+	for range maxSearchPages {
+		var data struct {
+			RateLimit *gqlRateLimit
+			Search    struct {
+				PageInfo struct {
+					HasNextPage bool
+					EndCursor   string
+				}
+				Nodes []gqlPR
+			}
+		}
+		errs, err := c.query(ctx, searchPRsQuery, vars, &data)
+		if err != nil {
+			return nil, err
+		}
+		if len(errs) > 0 {
+			return nil, fmt.Errorf("github: %s", errs[0].Message)
+		}
+		c.noteRateLimit(data.RateLimit)
+		for _, n := range data.Search.Nodes {
+			if n.Repository == nil { // a non-PR result; shouldn't happen with is:pr
+				continue
+			}
+			prs = append(prs, RepoPR{Repo: n.Repository.NameWithOwner, RepoURL: n.Repository.URL, PullRequest: n.toPR()})
+		}
+		if !data.Search.PageInfo.HasNextPage {
+			break
+		}
+		vars["cursor"] = data.Search.PageInfo.EndCursor
+	}
+	return prs, nil
 }
 
 // Repos fetches explicitly named "owner/name" repos. Repos that cannot be
