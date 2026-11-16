@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="refresh" content="{{if .View}}300{{else}}5{{end}}">
-<title>{{with .View}}{{$n := .Summary.OpenPRs}}{{if eq $.Tab "authored"}}{{$n = .Summary.AuthoredPRs}}{{end}}{{if $n}}({{$n}}) {{else}}✓ {{end}}{{end}}{{if eq .Tab "authored"}}My PRs · {{end}}PR HUD</title>
+<title>{{with .View}}{{$n := .Summary.OpenPRs}}{{if eq $.Tab "authored"}}{{$n = .Summary.AuthoredPRs}}{{else if eq $.Tab "ci"}}{{$n = .Summary.CIProblems}}{{end}}{{if $n}}({{$n}}) {{else}}✓ {{end}}{{end}}{{if eq .Tab "authored"}}My PRs · {{else if eq .Tab "ci"}}CI · {{end}}PR HUD</title>
 <style>
 :root {
   --bg: #f6f7f9; --panel: #fff; --text: #1f2328; --muted: #656d76; --border: #d0d7de;
@@ -33,6 +33,12 @@ nav.tabs a { padding: 6px 12px; margin-bottom: -1px; border: 1px solid transpare
 nav.tabs a:hover { color: var(--text); text-decoration: none; }
 nav.tabs a.active { color: var(--text); font-weight: 600; background: var(--panel); border-color: var(--border); border-bottom-color: var(--panel); }
 nav.tabs .n { font-size: 12px; background: var(--tag); border: 1px solid var(--border); border-radius: 999px; padding: 0 7px; font-weight: 500; }
+nav.tabs .n.bad { background: var(--bad); border-color: var(--bad); color: #fff; }
+h2.section { font-size: 15px; margin: 20px 0 8px; }
+h2.section .hint { color: var(--muted); font-weight: 400; font-size: 13px; }
+ul.checks { list-style: none; margin: 4px 0 0; padding: 0; font-size: 14px; }
+ul.checks li { padding: 1px 0; border: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+ul.checks .when { color: var(--muted); font-size: 13px; }
 .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; margin-bottom: 10px; }
 .panel ul.prs li:first-child { border-top: 0; }
 .pr-repo { color: var(--muted); font-weight: 500; }
@@ -95,8 +101,9 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
 
 {{with .View}}
   <nav class="tabs">
-    <a href="/" {{if ne $.Tab "authored"}}class="active" aria-current="page"{{end}}>My repos <span class="n">{{.Summary.OpenPRs}}</span></a>
+    <a href="/" {{if eq $.Tab "repos"}}class="active" aria-current="page"{{end}}>My repos <span class="n">{{.Summary.OpenPRs}}</span></a>
     <a href="/authored" {{if eq $.Tab "authored"}}class="active" aria-current="page"{{end}}>Opened by me <span class="n">{{.Summary.AuthoredPRs}}</span></a>
+    <a href="/ci" {{if eq $.Tab "ci"}}class="active" aria-current="page"{{end}}>CI <span class="n{{if .Summary.CIProblems}} bad{{end}}">{{.Summary.CIProblems}}</span></a>
   </nav>
 
   {{with .Errors}}
@@ -122,6 +129,62 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
       <p>@{{.User}} has no open pull requests.</p>
     </section>
   {{end}}
+  {{else if eq $.Tab "ci"}}
+  {{$user := .User}}
+  {{with .CI}}
+  {{if or .Failing .FailingPRs}}
+    <p class="summary">
+      {{with len .Failing}}{{.}} {{plural . "repository" "repositories"}} failing on the default branch{{end}}{{if and .Failing .FailingPRs}} · {{end}}
+      {{with len .FailingPRs}}{{.}} failing pull {{plural . "request" "requests"}} from others{{end}}
+    </p>
+  {{else}}
+    <section class="allclear">
+      <div class="big">✅</div>
+      <h2>All green</h2>
+      <p>No failing CI across {{len .Passing}} {{plural (len .Passing) "repository" "repositories"}} with checks{{with .Pending}}; {{len .}} still running{{end}}.</p>
+    </section>
+  {{end}}
+
+  {{if .Failing}}
+  <h2 class="section">Failing on the default branch <span class="hint">· scheduled, push, Dependabot and other runs</span></h2>
+  <section class="panel"><ul class="prs">
+    {{range .Failing}}<li>{{template "branch" .}}</li>{{end}}
+  </ul></section>
+  {{end}}
+
+  {{if .FailingPRs}}
+  <h2 class="section">Failing pull requests <span class="hint">· opened by others, bots included</span></h2>
+  <section class="panel"><ul class="prs">
+    {{range .FailingPRs}}
+    <li><a class="pr-repo" target="_blank" rel="noopener" href="{{.RepoURL}}/pulls">{{.Repo}}</a> · {{template "pr" .PullRequest}}</li>
+    {{end}}
+  </ul></section>
+  {{end}}
+
+  {{if .Pending}}
+  <h2 class="section">Running</h2>
+  <section class="panel"><ul class="prs">
+    {{range .Pending}}<li>{{template "branch" .}}</li>{{end}}
+  </ul></section>
+  {{end}}
+
+  {{if .Passing}}
+  <details class="quiet">
+    <summary>{{len .Passing}} {{plural (len .Passing) "repository" "repositories"}} passing on the default branch</summary>
+    <ul class="quiet-list">
+      {{range .Passing}}<li><a target="_blank" rel="noopener" href="{{.URL}}/actions">{{if eq .Source "owned"}}{{.Name}}{{else}}{{.NameWithOwner}}{{end}}</a></li>{{end}}
+    </ul>
+  </details>
+  {{end}}
+  {{if .NoCI}}
+  <details class="quiet">
+    <summary>{{len .NoCI}} {{plural (len .NoCI) "repository" "repositories"}} with no checks on the default branch</summary>
+    <ul class="quiet-list">
+      {{range .NoCI}}<li><a target="_blank" rel="noopener" href="{{.URL}}">{{if eq .Source "owned"}}{{.Name}}{{else}}{{.NameWithOwner}}{{end}}</a></li>{{end}}
+    </ul>
+  </details>
+  {{end}}
+  {{end}}{{/* with .CI */}}
   {{else}}
 
   {{if .Summary.OpenPRs}}
@@ -169,7 +232,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
 {{end}}
 
 <footer>
-  JSON: <a href="/api/v1/repos">/api/v1/repos</a> · <a href="/api/v1/prs">/api/v1/prs</a> · <a href="/api/v1/authored">/api/v1/authored</a>
+  JSON: <a href="/api/v1/repos">/api/v1/repos</a> · <a href="/api/v1/prs">/api/v1/prs</a> · <a href="/api/v1/authored">/api/v1/authored</a> · <a href="/api/v1/ci">/api/v1/ci</a>
   {{with .View}}{{if .RateLimit.Remaining}} · GitHub API budget: {{.RateLimit.Remaining}} points left{{end}}{{end}}
 </footer>
 </main>
@@ -187,4 +250,24 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
   <span title="{{abs .UpdatedAt}}">updated {{ago .UpdatedAt}}</span>
   {{with .ReviewDecision}}<span class="{{reviewClass .}}">{{reviewLabel .}}</span>{{end}}
 </div>
+{{end}}
+
+{{define "branch"}}
+{{$ci := .DefaultBranch}}
+{{$checks := $ci.Failing}}{{if eq $ci.State "PENDING"}}{{$checks = $ci.Pending}}{{end}}
+<span class="ci {{ciClass $ci.State}}" title="CI: {{ciLabel $ci.State}}">{{ciIcon $ci.State}}</span>
+<a class="pr-title" target="_blank" rel="noopener" href="{{.URL}}/actions">{{.NameWithOwner}}</a>
+<span class="tag">{{$ci.Branch}}</span>
+{{if .Private}}<span class="tag">private</span>{{end}}
+{{if eq .Source "extra"}}<span class="tag">watched</span>{{end}}
+<ul class="checks">
+  {{range $checks}}
+  <li>
+    <a target="_blank" rel="noopener" href="{{.URL}}">{{.Name}}</a>
+    {{with .Event}}<span class="tag">{{eventLabel .}}</span>{{end}}
+    <span class="when" title="{{abs .At}}">{{if eq .State "PENDING"}}started{{else}}{{lower .Conclusion}}{{end}} {{ago .At}}</span>
+  </li>
+  {{end}}
+</ul>
+<div class="sub">{{with $ci.CommitURL}}<a href="{{.}}" target="_blank" rel="noopener">head commit</a>{{end}}{{if not $ci.CommittedAt.IsZero}} <span title="{{abs $ci.CommittedAt}}">committed {{ago $ci.CommittedAt}}</span>{{end}}</div>
 {{end}}

@@ -189,3 +189,46 @@ func TestStoreAuthored(t *testing.T) {
 		t.Errorf("snap = %+v", snap)
 	}
 }
+
+func branch(state string, at time.Duration) *github.BranchCI {
+	return &github.BranchCI{Branch: "main", State: state, Checks: []github.Check{{Name: "CI", State: state, At: t0.Add(at)}}}
+}
+
+func TestBuildViewCI(t *testing.T) {
+	failOld := repo("me/fail-old")
+	failOld.DefaultBranch = branch(github.CIFailure, time.Hour)
+	failNew := repo("me/fail-new")
+	failNew.DefaultBranch = branch(github.CIFailure, 2*time.Hour)
+	archived := repo("me/archived")
+	archived.Archived, archived.DefaultBranch = true, branch(github.CIFailure, 3*time.Hour)
+	running := repo("me/running")
+	running.DefaultBranch = branch(github.CIPending, 0)
+	green := repo("me/green")
+	green.DefaultBranch = branch(github.CISuccess, 0)
+
+	botPR, minePR, okPR := pr(1, true, 0), pr(2, false, time.Hour), pr(3, false, 2*time.Hour)
+	botPR.Author, botPR.CIStatus = "dependabot", "FAILURE"
+	minePR.Author, minePR.CIStatus = "ME", "ERROR"
+	okPR.Author, okPR.CIStatus = "alice", "SUCCESS"
+	withPRs := repo("me/prs", botPR, minePR, okPR)
+
+	v := BuildView(&Snapshot{User: "me", Repos: []github.Repo{green, failOld, archived, withPRs, running, failNew}})
+	if got, want := names(v.CI.Failing), []string{"me/fail-new", "me/fail-old"}; !slices.Equal(got, want) {
+		t.Errorf("failing = %v, want %v", got, want)
+	}
+	if got := names(v.CI.Pending); !slices.Equal(got, []string{"me/running"}) {
+		t.Errorf("pending = %v", got)
+	}
+	if got := names(v.CI.Passing); !slices.Equal(got, []string{"me/green"}) {
+		t.Errorf("passing = %v", got)
+	}
+	if got := names(v.CI.NoCI); !slices.Equal(got, []string{"me/prs"}) {
+		t.Errorf("no CI = %v (archived repos should be left out)", got)
+	}
+	if len(v.CI.FailingPRs) != 1 || v.CI.FailingPRs[0].Number != 1 || v.CI.FailingPRs[0].Repo != "me/prs" {
+		t.Errorf("failing PRs = %+v (want only the bot's)", v.CI.FailingPRs)
+	}
+	if v.Summary.CIFailingRepos != 2 || v.Summary.FailingPRs != 1 || v.Summary.CIProblems() != 3 {
+		t.Errorf("summary = %+v", v.Summary)
+	}
+}

@@ -7,6 +7,12 @@ When nothing is open you get an "All clear 🎉".
 The **Opened by me** tab (`/authored`) shows the other direction: every open
 pull request you've opened, in any repo, most recently updated first.
 
+The **CI** tab (`/ci`) catches failures you didn't cause yourself. It lists
+watched repos whose default branch is failing: scheduled jobs, pushes,
+manual runs, Dependabot update jobs, and external commit statuses. It also
+lists failing PRs on your repos opened by someone else, bots included. The
+tab's badge turns red when anything is failing. Archived repos are left out.
+
 It runs as a single binary. Configuration comes from the environment and,
 if present, a `.env` file in the working directory (real environment
 variables win). The cache is in memory, and logs go to stdout.
@@ -23,7 +29,8 @@ make run
 Run `make help` to see every target.
 
 A read-only fine-grained token is enough. Give it **Metadata**, **Pull
-requests**, and **Commit statuses** read access on the repos you want to see.
+requests**, **Commit statuses**, and **Actions** read access on the repos you
+want to see.
 The **Opened by me** tab covers PRs in public repos and in private repos the
 token can read.
 
@@ -49,6 +56,14 @@ The **Refresh now** button refreshes on demand. Requests that arrive within
 10 seconds of the last refresh reuse its result. A refresh costs roughly one
 GraphQL point per 25 repos, plus one per 50 PRs you've opened.
 
+CI status comes from the check suites on each default branch's head commit,
+deduplicated to the newest run per workflow and trigger. Runs of the same
+workflow that start within 10 minutes of each other (like Dependabot's
+per-ecosystem update jobs) count together, so if any of them fails, the
+workflow shows as failing. Only the newest 50 suites on a commit are read.
+On a repo that has gone a long time without a commit, a frequent cron job
+can push older results out of that window.
+
 ## API
 
 All responses are JSON. Bot-authored PRs (Dependabot, Renovate, …) are
@@ -60,6 +75,7 @@ fetch finishes, the list endpoints return `503`.
 | `GET /api/v1/repos` | Every repo with its open PRs. Active repos come first, most recent activity first. `?has_prs=true` returns only repos with open PRs. |
 | `GET /api/v1/prs` | Every open PR across all repos in one flat list, most recently updated first. |
 | `GET /api/v1/authored` | Every open PR opened by the user, in any repo, most recently updated first. |
+| `GET /api/v1/ci` | CI health: `failing` and `pending` repos (default branch), `failing_prs` opened by others, plus `passing` and `no_ci` repos. |
 | `POST /api/v1/refresh` | Refresh from GitHub now. |
 | `GET /healthz` | Liveness, plus whether data has been loaded yet. |
 
@@ -70,7 +86,8 @@ more. PR fields: `number`, `title`, `url`, `author`, `author_is_bot`, `draft`,
 `created_at`, `updated_at`, `review_decision` (`APPROVED`,
 `CHANGES_REQUESTED`, `REVIEW_REQUIRED`), and `ci_status` (`SUCCESS`,
 `FAILURE`, `ERROR`, `PENDING`, `EXPECTED`). The last two are left out when
-empty.
+empty. Repos also carry `default_branch` (`branch`, `state`, and per-workflow
+`checks` with `name`, `event`, `state`, `conclusion`, `url`, `at`).
 
 ```sh
 curl -s localhost:8080/api/v1/prs | jq -r '.prs[] | "\(.repo)#\(.number) \(.title)"'
