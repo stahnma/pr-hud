@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net/http"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/stahnma/pr-hud/internal/github"
@@ -38,10 +39,12 @@ func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.page(tabRepos))
 	mux.HandleFunc("GET /authored", s.page(tabAuthored))
+	mux.HandleFunc("GET /ci", s.page(tabCI))
 	mux.HandleFunc("POST /refresh", s.refreshForm)
 	mux.HandleFunc("GET /api/v1/repos", s.apiRepos)
 	mux.HandleFunc("GET /api/v1/prs", s.apiPRs)
 	mux.HandleFunc("GET /api/v1/authored", s.apiAuthored)
+	mux.HandleFunc("GET /api/v1/ci", s.apiCI)
 	mux.HandleFunc("POST /api/v1/refresh", s.apiRefresh)
 	mux.HandleFunc("GET /healthz", s.healthz)
 	return s.logRequests(mux)
@@ -51,10 +54,11 @@ func (s *Server) Handler() http.Handler {
 const (
 	tabRepos    = "repos"    // PRs against the user's repos
 	tabAuthored = "authored" // PRs the user opened
+	tabCI       = "ci"       // failing CI on the user's repos
 )
 
 // tabPaths maps each tab to its URL path.
-var tabPaths = map[string]string{tabRepos: "/", tabAuthored: "/authored"}
+var tabPaths = map[string]string{tabRepos: "/", tabAuthored: "/authored", tabCI: "/ci"}
 
 type pageData struct {
 	Tab          string
@@ -181,6 +185,17 @@ func (s *Server) apiAuthored(w http.ResponseWriter, r *http.Request) {
 	}{meta, v.Authored})
 }
 
+func (s *Server) apiCI(w http.ResponseWriter, r *http.Request) {
+	v, meta, ok := s.apiView(w)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, struct {
+		apiMeta
+		hud.CIView
+	}{meta, v.CI})
+}
+
 func (s *Server) apiRefresh(w http.ResponseWriter, r *http.Request) {
 	if err := s.refresh(r); err != nil {
 		writeJSON(w, http.StatusBadGateway, map[string]string{"error": err.Error()})
@@ -230,6 +245,17 @@ var funcs = template.FuncMap{
 	"ciClass": func(s string) string { return ci(s).class },
 	"ciIcon":  func(s string) string { return ci(s).icon },
 	"ciLabel": func(s string) string { return ci(s).label },
+	"lower":   strings.ToLower,
+	// eventLabel names what triggered a workflow run.
+	"eventLabel": func(e string) string {
+		switch e {
+		case "schedule":
+			return "scheduled"
+		case "dynamic":
+			return "automatic"
+		}
+		return strings.ReplaceAll(e, "_", " ")
+	},
 	"reviewClass": func(s string) string {
 		switch s {
 		case "APPROVED":
@@ -262,6 +288,8 @@ func ci(state string) ciStyle {
 		return ciStyle{"ci-failure", "✗", "failing"}
 	case "PENDING", "EXPECTED":
 		return ciStyle{"ci-pending", "●", "pending"}
+	case "NEUTRAL":
+		return ciStyle{"ci-none", "–", "neutral"}
 	}
 	return ciStyle{"ci-none", "○", "no checks"}
 }

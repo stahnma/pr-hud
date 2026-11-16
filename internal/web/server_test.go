@@ -182,7 +182,7 @@ func TestAuthoredTabEmpty(t *testing.T) {
 
 func TestRefreshRedirectsToTab(t *testing.T) {
 	h := newServer(t, idle)
-	for tab, want := range map[string]string{"authored": "/authored", "repos": "/", "https://evil.example": "/"} {
+	for tab, want := range map[string]string{"authored": "/authored", "ci": "/ci", "repos": "/", "https://evil.example": "/"} {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/refresh", strings.NewReader("tab="+tab))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
@@ -204,5 +204,62 @@ func TestAPIAuthored(t *testing.T) {
 	}
 	if len(resp.PRs) != 1 || resp.PRs[0].Repo != "upstream/proj" || resp.PRs[0].Number != 42 || resp.Summary.AuthoredPRs != 1 {
 		t.Errorf("resp = %+v", resp)
+	}
+}
+
+var broken = github.Repo{NameWithOwner: "me/broken", Name: "broken", URL: "https://github.com/me/broken", Source: "owned", PRs: []github.PullRequest{},
+	DefaultBranch: &github.BranchCI{Branch: "main", State: github.CIFailure, CommitURL: "https://github.com/me/broken/commit/abc", CommittedAt: now, Checks: []github.Check{
+		{Name: "nightly", Event: "schedule", State: github.CIFailure, Conclusion: "FAILURE", URL: "https://github.com/me/broken/actions/runs/7", At: now},
+		{Name: "CI", Event: "push", State: github.CISuccess, Conclusion: "SUCCESS", URL: "https://github.com/me/broken/actions/runs/6", At: now},
+	}}}
+
+func TestCITab(t *testing.T) {
+	green := idle
+	green.DefaultBranch = &github.BranchCI{Branch: "main", State: github.CISuccess}
+	h := newServer(t, busy, broken, green)
+
+	body := get(t, h, "/ci").Body.String()
+	for _, want := range []string{
+		"(2) CI · PR HUD", `href="https://github.com/me/broken/actions"`, "nightly", ">scheduled<",
+		`href="https://github.com/me/broken/actions/runs/7"`, "failure just now", // failing check and its run
+		"Add &lt;feature&gt;", "by alice", // alice's failing PR on me/busy
+		"1 repository passing on the default branch", "1 repository with no checks",
+		`class="n bad">2<`, `name="tab" value="ci"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("CI page missing %q", want)
+		}
+	}
+	if strings.Contains(body, "actions/runs/6") {
+		t.Error("CI page lists a passing check for a failing repo")
+	}
+	if strings.Contains(body, "All green") {
+		t.Error("CI page says all green despite failures")
+	}
+}
+
+func TestCITabAllGreen(t *testing.T) {
+	body := get(t, newServer(t, idle), "/ci").Body.String()
+	if !strings.Contains(body, "All green") || !strings.Contains(body, "✓ CI · PR HUD") {
+		t.Error("expected all-green state")
+	}
+}
+
+func TestAPICI(t *testing.T) {
+	var resp struct {
+		Summary hud.Summary `json:"summary"`
+		hud.CIView
+	}
+	if err := json.Unmarshal(get(t, newServer(t, busy, broken), "/api/v1/ci").Body.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	if len(resp.Failing) != 1 || resp.Failing[0].DefaultBranch.Failing()[0].Name != "nightly" {
+		t.Errorf("failing = %+v", resp.Failing)
+	}
+	if len(resp.FailingPRs) != 1 || resp.FailingPRs[0].Number != 1 || resp.Pending == nil || resp.NoCI == nil {
+		t.Errorf("resp = %+v", resp.CIView)
+	}
+	if resp.Summary.CIFailingRepos != 1 || resp.Summary.FailingPRs != 1 {
+		t.Errorf("summary = %+v", resp.Summary)
 	}
 }

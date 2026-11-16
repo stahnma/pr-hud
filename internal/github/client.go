@@ -29,17 +29,40 @@ fragment PRFields on PullRequest {
   commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 }`
 
+// branchCIFragment selects the checks on a repo's default branch head. This
+// is where scheduled, push, workflow_dispatch and Dependabot update runs
+// land.
+const branchCIFragment = `
+fragment BranchCIFields on Ref {
+  name
+  target { ... on Commit {
+    url committedDate
+    status { contexts { context state targetUrl createdAt } }
+    checkSuites(last: ` + checkSuitesPerCommit + `) { nodes {
+      status conclusion createdAt updatedAt url
+      app { name }
+      workflowRun { event url workflow { name } }
+    } }
+  } }
+}`
+
+// checkSuitesPerCommit is how many of the newest check suites are fetched for
+// a default branch head. A long-idle repo with a frequent cron job can push
+// older suites out of this window.
+const checkSuitesPerCommit = "50"
+
 // repoFragment selects everything pr-hud shows for a repo. Up to 25 PRs are
 // fetched per repo; totalCount reports the real number.
 const repoFragment = `
 fragment RepoFields on Repository {
   nameWithOwner name url isPrivate isArchived isFork pushedAt
   owner { login }
+  defaultBranchRef { ...BranchCIFields }
   pullRequests(states: OPEN, first: 25, orderBy: {field: UPDATED_AT, direction: DESC}) {
     totalCount
     nodes { ...PRFields }
   }
-}` + prFragment
+}` + prFragment + branchCIFragment
 
 const ownerReposQuery = `
 query($login: String!, $cursor: String, $isFork: Boolean, $privacy: RepositoryPrivacy) {
