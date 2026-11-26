@@ -100,3 +100,16 @@ make check   # gofmt check, go vet, go test
 ```
 
 Dependencies are standard library only.
+
+## Deploy on Fly.io
+
+`fly.toml` deploys the Fly app `stahnma-pr-hud` as a private backend: it
+has only a Flycast address, and
+[stahnma-edge](https://github.com/stahnma/stahnma-edge) serves it at
+`https://prs.stahnma.us` behind GitHub sign-in.
+
+```sh
+fly secrets set GITHUB_TOKEN=github_pat_... -a stahnma-pr-hud
+fly deploy
+fly ips list -a stahnma-pr-hud   # should show only "private ingress"
+```
