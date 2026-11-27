@@ -28,11 +28,16 @@ make run
 `make install` puts the binary in `~/.local/bin` (override with `PREFIX=`).
 Run `make help` to see every target.
 
-A read-only fine-grained token is enough. Give it **Metadata**, **Contents**,
-**Pull requests**, **Commit statuses**, and **Actions** read access on the
-repos you want to see. Contents is needed to read a private repo's default
-branch for the **CI** tab; without it every refresh fails with "Resource not
-accessible by personal access token".
+A read-only fine-grained token covers public repos. Give it **Metadata**,
+**Contents**, **Pull requests**, **Commit statuses**, and **Actions** read
+access on the repos you want to see. Contents is needed to read a private
+repo's default branch.
+
+Fine-grained tokens can't read check suites on private repos (there is no
+fine-grained permission for them), so the **CI** tab's check-suite data for
+private repos needs a classic token with the `repo` scope. With a
+fine-grained token, refreshes that include private repos with check suites
+fail with "Resource not accessible by personal access token".
 The **Opened by me** tab covers PRs in public repos and in private repos the
 token can read.
 
