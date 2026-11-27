@@ -78,7 +78,18 @@ details.quiet > summary { color: var(--muted); }
 ul.quiet-list { columns: 3 220px; list-style: none; margin: 0; padding: 0 14px 12px 36px; font-size: 14px; }
 ul.quiet-list li { break-inside: avoid; padding: 2px 0; }
 .loading { text-align: center; color: var(--muted); padding: 48px 0; }
-footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: center; }
+[data-tip] { cursor: help; }
+[data-tip]:not(.ci) { position: relative; }
+[data-tip]:hover::after {
+  content: attr(data-tip); position: absolute; bottom: calc(100% + 6px); right: 0; z-index: 10;
+  background: var(--text); color: var(--bg); font-size: 12px; font-weight: 400; line-height: 1.4;
+  padding: 3px 8px; border-radius: 6px; white-space: nowrap; pointer-events: none;
+}
+.ci[data-tip]:hover::after, nav.tabs [data-tip]:hover::after { left: 0; right: auto; }
+nav.tabs [data-tip]:hover::after { top: calc(100% + 6px); bottom: auto; }
+.legend { color: var(--muted); font-size: 12px; display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 14px; margin: 24px 0 0; }
+.legend .count { margin-left: 0; font-size: 11px; padding: 0 6px; }
+footer { margin-top: 12px; color: var(--muted); font-size: 12px; text-align: center; }
 </style>
 </head>
 <body>
@@ -103,9 +114,9 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
 
 {{with .View}}
   <nav class="tabs">
-    <a href="/" {{if eq $.Tab "repos"}}class="active" aria-current="page"{{end}}>My repos <span class="n">{{.Summary.OpenPRs}}</span></a>
-    <a href="/authored" {{if eq $.Tab "authored"}}class="active" aria-current="page"{{end}}>Opened by me <span class="n">{{.Summary.AuthoredPRs}}</span></a>
-    <a href="/ci" {{if eq $.Tab "ci"}}class="active" aria-current="page"{{end}}>CI <span class="n{{if .Summary.CIProblems}} bad{{end}}">{{.Summary.CIProblems}}</span></a>
+    <a href="/" {{if eq $.Tab "repos"}}class="active" aria-current="page"{{end}}>My repos <span class="n" data-tip="Open pull requests on your repos">{{.Summary.OpenPRs}}</span></a>
+    <a href="/authored" {{if eq $.Tab "authored"}}class="active" aria-current="page"{{end}}>Opened by me <span class="n" data-tip="Open pull requests you opened">{{.Summary.AuthoredPRs}}</span></a>
+    <a href="/ci" {{if eq $.Tab "ci"}}class="active" aria-current="page"{{end}}>CI <span class="n{{if .Summary.CIProblems}} bad{{end}}" data-tip="Failing default branches and failing pull requests from others">{{.Summary.CIProblems}}</span></a>
   </nav>
 
   {{with .Errors}}
@@ -198,7 +209,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
         {{if .Private}}<span class="tag">private</span>{{end}}
         {{if .Archived}}<span class="tag">archived</span>{{end}}
         {{if eq .Source "extra"}}<span class="tag">watched</span>{{end}}
-        <span class="count">{{.OpenPRCount}}</span>
+        <span class="count" role="img" aria-label="{{.OpenPRCount}} open pull {{plural .OpenPRCount "request" "requests"}}" data-tip="{{.OpenPRCount}} open pull {{plural .OpenPRCount "request" "requests"}}">{{.OpenPRCount}}</span>
       </summary>
       <ul class="prs">
         {{range .PRs}}
@@ -233,6 +244,17 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
   <p class="loading">Fetching repositories from GitHub…</p>
 {{end}}
 
+{{with .View}}
+<p class="legend" aria-label="Legend">
+  <span><span class="ci-success">✓</span> CI passing</span>
+  <span><span class="ci-failure">✗</span> failing</span>
+  <span><span class="ci-pending">●</span> running</span>
+  <span><span class="ci-none">–</span> cancelled or skipped</span>
+  <span><span class="ci-none">○</span> no checks</span>
+  {{if eq $.Tab "repos"}}<span><span class="count">3</span> open pull requests in that repo</span>{{end}}
+</p>
+{{end}}
+
 <footer>
   JSON: <a href="/api/v1/repos">/api/v1/repos</a> · <a href="/api/v1/prs">/api/v1/prs</a> · <a href="/api/v1/authored">/api/v1/authored</a> · <a href="/api/v1/ci">/api/v1/ci</a>
   {{with .View}}{{if .RateLimit.Remaining}} · GitHub API budget: {{.RateLimit.Remaining}} points left{{end}}{{end}}
@@ -242,7 +264,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
 </html>
 
 {{define "pr"}}
-<span class="ci {{ciClass .CIStatus}}" title="CI: {{ciLabel .CIStatus}}">{{ciIcon .CIStatus}}</span>
+<span class="ci {{ciClass .CIStatus}}" role="img" aria-label="CI {{ciLabel .CIStatus}}" data-tip="CI {{ciLabel .CIStatus}} on the latest commit">{{ciIcon .CIStatus}}</span>
 <a class="pr-title" target="_blank" rel="noopener" href="{{.URL}}">{{.Title}}</a> <span class="num">#{{.Number}}</span>
 {{if .Draft}}<span class="tag">draft</span>{{end}}
 {{if .AuthorIsBot}}<span class="tag">bot</span>{{end}}
@@ -257,7 +279,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
 {{define "branch"}}
 {{$ci := .DefaultBranch}}
 {{$checks := $ci.Failing}}{{if eq $ci.State "PENDING"}}{{$checks = $ci.Pending}}{{end}}
-<span class="ci {{ciClass $ci.State}}" title="CI: {{ciLabel $ci.State}}">{{ciIcon $ci.State}}</span>
+<span class="ci {{ciClass $ci.State}}" role="img" aria-label="CI {{ciLabel $ci.State}}" data-tip="CI {{ciLabel $ci.State}} on {{$ci.Branch}}">{{ciIcon $ci.State}}</span>
 <a class="pr-title" target="_blank" rel="noopener" href="{{.URL}}/actions">{{.NameWithOwner}}</a>
 <span class="tag">{{$ci.Branch}}</span>
 {{if .Private}}<span class="tag">private</span>{{end}}
