@@ -224,7 +224,7 @@ func TestCITab(t *testing.T) {
 		`href="https://github.com/me/broken/actions/runs/7"`, "failure just now", // failing check and its run
 		"Add &lt;feature&gt;", "by alice", // alice's failing PR on me/busy
 		"1 repository passing on the default branch", "1 repository with no checks",
-		`class="n bad">2<`, `name="tab" value="ci"`,
+		`class="n bad" data-tip="Failing default branches and failing pull requests from others">2<`, `name="tab" value="ci"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("CI page missing %q", want)
@@ -261,5 +261,29 @@ func TestAPICI(t *testing.T) {
 	}
 	if resp.Summary.CIFailingRepos != 1 || resp.Summary.FailingPRs != 1 {
 		t.Errorf("summary = %+v", resp.Summary)
+	}
+}
+
+func TestIconsAreExplained(t *testing.T) {
+	h := newServer(t, busy, broken)
+
+	body := get(t, h, "/").Body.String()
+	for _, want := range []string{
+		`data-tip="CI failing on the latest commit"`, // alice's PR icon
+		`aria-label="2 open pull requests" data-tip="2 open pull requests">2</span>`,
+		`data-tip="Open pull requests on your repos"`,
+		`class="legend"`, "open pull requests in that repo",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("repos page missing %q", want)
+		}
+	}
+
+	body = get(t, h, "/ci").Body.String()
+	if !strings.Contains(body, `data-tip="CI failing on main"`) {
+		t.Error("CI page: branch icon has no tooltip")
+	}
+	if strings.Contains(body, "open pull requests in that repo") {
+		t.Error("CI page legend explains a badge it doesn't show")
 	}
 }
