@@ -173,6 +173,30 @@ func TestAuthoredTab(t *testing.T) {
 	}
 }
 
+func TestIconsAreExplained(t *testing.T) {
+	h := newServer(t, busy, broken)
+
+	body := get(t, h, "/").Body.String()
+	for _, want := range []string{
+		`data-tip="CI failing on the latest commit"`, // alice's PR icon
+		`aria-label="2 open pull requests" data-tip="2 open pull requests">2</span>`,
+		`data-tip="Open pull requests on your repos"`,
+		`class="legend"`, "open pull requests in that repo",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("repos page missing %q", want)
+		}
+	}
+
+	body = get(t, h, "/ci").Body.String()
+	if !strings.Contains(body, `data-tip="CI failing on main"`) {
+		t.Error("CI page: branch icon has no tooltip")
+	}
+	if strings.Contains(body, "open pull requests in that repo") {
+		t.Error("CI page legend explains a badge it doesn't show")
+	}
+}
+
 func TestAuthoredTabEmpty(t *testing.T) {
 	body := get(t, newServer(t, busy), "/authored").Body.String()
 	if !strings.Contains(body, "has no open pull requests") {
@@ -264,26 +288,3 @@ func TestAPICI(t *testing.T) {
 	}
 }
 
-func TestIconsAreExplained(t *testing.T) {
-	h := newServer(t, busy, broken)
-
-	body := get(t, h, "/").Body.String()
-	for _, want := range []string{
-		`data-tip="CI failing on the latest commit"`, // alice's PR icon
-		`aria-label="2 open pull requests" data-tip="2 open pull requests">2</span>`,
-		`data-tip="Open pull requests on your repos"`,
-		`class="legend"`, "open pull requests in that repo",
-	} {
-		if !strings.Contains(body, want) {
-			t.Errorf("repos page missing %q", want)
-		}
-	}
-
-	body = get(t, h, "/ci").Body.String()
-	if !strings.Contains(body, `data-tip="CI failing on main"`) {
-		t.Error("CI page: branch icon has no tooltip")
-	}
-	if strings.Contains(body, "open pull requests in that repo") {
-		t.Error("CI page legend explains a badge it doesn't show")
-	}
-}
