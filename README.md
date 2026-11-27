@@ -28,9 +28,18 @@ make run
 `make install` puts the binary in `~/.local/bin` (override with `PREFIX=`).
 Run `make help` to see every target.
 
-A read-only fine-grained token is enough. Give it **Metadata**, **Pull
-requests**, **Commit statuses**, and **Actions** read access on the repos you
-want to see.
+A read-only fine-grained token covers public repos. Give it **Metadata**,
+**Contents**, **Pull requests**, **Commit statuses**, and **Actions** read
+access on the repos you want to see. Contents is needed to read a private
+repo's default branch.
+
+Fine-grained tokens can't read check suites on private repos (there is no
+fine-grained permission for them). For those repos the **CI** tab uses the
+head commit's overall check result instead, so a failing default branch
+still shows as failing, just without the per-workflow list. A classic token
+with the `repo` scope shows the full detail.
+
+A `GITHUB_TOKEN` in your shell environment wins over `.env`.
 The **Opened by me** tab covers PRs in public repos and in private repos the
 token can read.
 
@@ -100,3 +109,16 @@ make check   # gofmt check, go vet, go test
 ```
 
 Dependencies are standard library only.
+
+## Deploy on Fly.io
+
+`fly.toml` deploys the Fly app `stahnma-pr-hud` as a private backend: it
+has only a Flycast address, and
+[stahnma-edge](https://github.com/stahnma/stahnma-edge) serves it at
+`https://prs.stahnma.us` behind GitHub sign-in.
+
+```sh
+fly secrets set GITHUB_TOKEN=github_pat_... -a stahnma-pr-hud
+fly deploy
+fly ips list -a stahnma-pr-hud   # should show only "private ingress"
+```

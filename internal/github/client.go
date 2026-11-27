@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,7 @@ fragment BranchCIFields on Ref {
   name
   target { ... on Commit {
     url committedDate
+    statusCheckRollup { state }
     status { contexts { context state targetUrl createdAt } }
     checkSuites(last: ` + checkSuitesPerCommit + `) { nodes {
       status conclusion createdAt updatedAt url
@@ -129,7 +131,7 @@ func (c *Client) Viewer(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if len(errs) > 0 {
-		return "", fmt.Errorf("github: %s", errs[0].Message)
+		return "", fmt.Errorf("github: %s", errs[0])
 	}
 	return data.Viewer.Login, nil
 }
@@ -162,8 +164,8 @@ func (c *Client) OwnerRepos(ctx context.Context, login string, opt OwnerOptions)
 		if err != nil {
 			return nil, err
 		}
-		if len(errs) > 0 {
-			return nil, fmt.Errorf("github: %s", errs[0].Message)
+		if errs = withoutHiddenCheckSuites(errs); len(errs) > 0 {
+			return nil, fmt.Errorf("github: %s", errs[0])
 		}
 		c.noteRateLimit(data.RateLimit)
 		if data.RepositoryOwner == nil {
@@ -213,7 +215,7 @@ func (c *Client) AuthoredPRs(ctx context.Context, login string, opt OwnerOptions
 			return nil, err
 		}
 		if len(errs) > 0 {
-			return nil, fmt.Errorf("github: %s", errs[0].Message)
+			return nil, fmt.Errorf("github: %s", errs[0])
 		}
 		c.noteRateLimit(data.RateLimit)
 		for _, n := range data.Search.Nodes {
@@ -312,6 +314,35 @@ type gqlError struct {
 	Path    []any  `json:"path"`
 }
 
+// String is the message plus the path of the field GitHub rejected, e.g.
+// "Resource not accessible by personal access token (at
+// repositoryOwner.repositories.nodes.6.defaultBranchRef)".
+func (e gqlError) String() string {
+	if len(e.Path) == 0 {
+		return e.Message
+	}
+	parts := make([]string, len(e.Path))
+	for i, p := range e.Path {
+		parts[i] = fmt.Sprint(p)
+	}
+	return e.Message + " (at " + strings.Join(parts, ".") + ")"
+}
+
+// withoutHiddenCheckSuites drops errors for check suites the token can't
+// read. Fine-grained tokens have no permission for check suites on private
+// repos, so GitHub returns those suites as null with an error, while the
+// commit's statusCheckRollup state stays readable. toBranchCI falls back to
+// that state, so these errors don't need to fail the query.
+func withoutHiddenCheckSuites(errs []gqlError) []gqlError {
+	var out []gqlError
+	for _, e := range errs {
+		if !slices.Contains(e.Path, any("checkSuites")) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
 // query runs a GraphQL query and decodes "data" into out. GraphQL errors that
 // came back alongside data are returned for the caller to judge.
 func (c *Client) query(ctx context.Context, q string, vars map[string]any, out any) ([]gqlError, error) {
@@ -347,7 +378,7 @@ func (c *Client) query(ctx context.Context, q string, vars map[string]any, out a
 	}
 	if len(env.Data) == 0 || string(env.Data) == "null" {
 		if len(env.Errors) > 0 {
-			return nil, fmt.Errorf("github: %s", env.Errors[0].Message)
+			return nil, fmt.Errorf("github: %s", env.Errors[0])
 		}
 		return nil, errors.New("github: empty response")
 	}

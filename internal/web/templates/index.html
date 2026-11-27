@@ -268,6 +268,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
     <span class="when" title="{{abs .At}}">{{if eq .State "PENDING"}}started{{else}}{{lower .Conclusion}}{{end}} {{ago .At}}</span>
   </li>
   {{end}}
+  {{if $ci.ChecksHidden}}{{if not $checks}}<li><span class="when">check details aren't visible to this token; see the head commit</span></li>{{end}}{{end}}
 </ul>
 <div class="sub">{{with $ci.CommitURL}}<a href="{{.}}" target="_blank" rel="noopener">head commit</a>{{end}}{{if not $ci.CommittedAt.IsZero}} <span title="{{abs $ci.CommittedAt}}">committed {{ago $ci.CommittedAt}}</span>{{end}}</div>
 {{end}}
