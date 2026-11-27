@@ -287,4 +287,3 @@ func TestAPICI(t *testing.T) {
 		t.Errorf("summary = %+v", resp.Summary)
 	}
 }
-
