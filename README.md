@@ -28,9 +28,11 @@ make run
 `make install` puts the binary in `~/.local/bin` (override with `PREFIX=`).
 Run `make help` to see every target.
 
-A read-only fine-grained token is enough. Give it **Metadata**, **Pull
-requests**, **Commit statuses**, and **Actions** read access on the repos you
-want to see.
+A read-only fine-grained token is enough. Give it **Metadata**, **Contents**,
+**Pull requests**, **Commit statuses**, and **Actions** read access on the
+repos you want to see. Contents is needed to read a private repo's default
+branch for the **CI** tab; without it every refresh fails with "Resource not
+accessible by personal access token".
 The **Opened by me** tab covers PRs in public repos and in private repos the
 token can read.
 

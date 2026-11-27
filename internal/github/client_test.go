@@ -241,3 +241,17 @@ func TestBranchCIStates(t *testing.T) {
 		t.Error("empty repo should have no branch CI")
 	}
 }
+
+func TestGQLErrorStringIncludesPath(t *testing.T) {
+	e := gqlError{
+		Message: "Resource not accessible by personal access token",
+		Path:    []any{"repositoryOwner", "repositories", "nodes", float64(6), "defaultBranchRef"},
+	}
+	want := "Resource not accessible by personal access token (at repositoryOwner.repositories.nodes.6.defaultBranchRef)"
+	if got := e.String(); got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+	if got := (gqlError{Message: "boom"}).String(); got != "boom" {
+		t.Errorf("String() without path = %q, want %q", got, "boom")
+	}
+}

@@ -129,7 +129,7 @@ func (c *Client) Viewer(ctx context.Context) (string, error) {
 		return "", err
 	}
 	if len(errs) > 0 {
-		return "", fmt.Errorf("github: %s", errs[0].Message)
+		return "", fmt.Errorf("github: %s", errs[0])
 	}
 	return data.Viewer.Login, nil
 }
@@ -163,7 +163,7 @@ func (c *Client) OwnerRepos(ctx context.Context, login string, opt OwnerOptions)
 			return nil, err
 		}
 		if len(errs) > 0 {
-			return nil, fmt.Errorf("github: %s", errs[0].Message)
+			return nil, fmt.Errorf("github: %s", errs[0])
 		}
 		c.noteRateLimit(data.RateLimit)
 		if data.RepositoryOwner == nil {
@@ -213,7 +213,7 @@ func (c *Client) AuthoredPRs(ctx context.Context, login string, opt OwnerOptions
 			return nil, err
 		}
 		if len(errs) > 0 {
-			return nil, fmt.Errorf("github: %s", errs[0].Message)
+			return nil, fmt.Errorf("github: %s", errs[0])
 		}
 		c.noteRateLimit(data.RateLimit)
 		for _, n := range data.Search.Nodes {
@@ -312,6 +312,20 @@ type gqlError struct {
 	Path    []any  `json:"path"`
 }
 
+// String is the message plus the path of the field GitHub rejected, e.g.
+// "Resource not accessible by personal access token (at
+// repositoryOwner.repositories.nodes.6.defaultBranchRef)".
+func (e gqlError) String() string {
+	if len(e.Path) == 0 {
+		return e.Message
+	}
+	parts := make([]string, len(e.Path))
+	for i, p := range e.Path {
+		parts[i] = fmt.Sprint(p)
+	}
+	return e.Message + " (at " + strings.Join(parts, ".") + ")"
+}
+
 // query runs a GraphQL query and decodes "data" into out. GraphQL errors that
 // came back alongside data are returned for the caller to judge.
 func (c *Client) query(ctx context.Context, q string, vars map[string]any, out any) ([]gqlError, error) {
@@ -347,7 +361,7 @@ func (c *Client) query(ctx context.Context, q string, vars map[string]any, out a
 	}
 	if len(env.Data) == 0 || string(env.Data) == "null" {
 		if len(env.Errors) > 0 {
-			return nil, fmt.Errorf("github: %s", env.Errors[0].Message)
+			return nil, fmt.Errorf("github: %s", env.Errors[0])
 		}
 		return nil, errors.New("github: empty response")
 	}
