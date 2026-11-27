@@ -211,6 +211,12 @@ func (s *Server) apiRefresh(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"fetched_at": snap.FetchedAt})
 }
 
+func favicon(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Write(faviconSVG)
+}
+
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {
 	snap, _ := s.store.State()
 	body := map[string]any{"status": "ok", "has_data": snap != nil}
@@ -285,12 +291,6 @@ var funcs = template.FuncMap{
 }
 
 type ciStyle struct{ class, icon, label string }
-
-func favicon(w http.ResponseWriter, _ *http.Request) {
-	w.Header().Set("Content-Type", "image/svg+xml")
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	w.Write(faviconSVG)
-}
 
 func ci(state string) ciStyle {
 	switch state {
