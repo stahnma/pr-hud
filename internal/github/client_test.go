@@ -255,3 +255,63 @@ func TestGQLErrorStringIncludesPath(t *testing.T) {
 		t.Errorf("String() without path = %q, want %q", got, "boom")
 	}
 }
+
+func TestBranchCIHiddenSuitesUseRollup(t *testing.T) {
+	for _, tc := range []struct {
+		name, raw, want string
+	}{
+		{"hidden failure", `{"name":"main","target":{"statusCheckRollup":{"state":"FAILURE"},
+		  "checkSuites":{"nodes":[null,null]}}}`, CIFailure},
+		{"hidden pending beats visible success", `{"name":"main","target":{"statusCheckRollup":{"state":"PENDING"},
+		  "checkSuites":{"nodes":[null,{"status":"COMPLETED","conclusion":"SUCCESS","workflowRun":{"workflow":{"name":"x"}}}]}}}`, CIPending},
+		{"hidden success", `{"name":"main","target":{"statusCheckRollup":{"state":"SUCCESS"},
+		  "checkSuites":{"nodes":[null]}}}`, CISuccess},
+	} {
+		var ref gqlRef
+		if err := json.Unmarshal([]byte(tc.raw), &ref); err != nil {
+			t.Fatal(err)
+		}
+		b := ref.toBranchCI()
+		if b.State != tc.want || !b.ChecksHidden {
+			t.Errorf("%s: state = %q hidden = %v, want %q hidden", tc.name, b.State, b.ChecksHidden, tc.want)
+		}
+		for _, c := range b.Checks {
+			if c.Name == "" {
+				t.Errorf("%s: hidden suite became a check: %+v", tc.name, c)
+			}
+		}
+	}
+
+	// With every suite visible the rollup is not consulted.
+	var ref gqlRef
+	json.Unmarshal([]byte(`{"name":"main","target":{"statusCheckRollup":{"state":"FAILURE"},
+	  "checkSuites":{"nodes":[{"status":"COMPLETED","conclusion":"SUCCESS","workflowRun":{"workflow":{"name":"x"}}}]}}}`), &ref)
+	if b := ref.toBranchCI(); b.ChecksHidden || b.State != CISuccess {
+		t.Errorf("visible suites: state = %q hidden = %v", b.State, b.ChecksHidden)
+	}
+}
+
+func TestOwnerReposToleratesHiddenCheckSuites(t *testing.T) {
+	const hidden = `{"data":{"repositoryOwner":{"repositories":{"pageInfo":{"hasNextPage":false},"nodes":[
+ {"nameWithOwner":"me/secret","name":"secret","isPrivate":true,"owner":{"login":"me"},
+  "defaultBranchRef":{"name":"main","target":{"statusCheckRollup":{"state":"FAILURE"},"checkSuites":{"nodes":[null]}}},
+  "pullRequests":{"totalCount":0,"nodes":[]}}]}}},
+"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by personal access token",
+  "path":["repositoryOwner","repositories","nodes",0,"defaultBranchRef","target","checkSuites","nodes",0]}]}`
+	c := fakeServer(t, func(gqlRequest) string { return hidden })
+	repos, err := c.OwnerRepos(context.Background(), "me", OwnerOptions{IncludePrivate: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(repos) != 1 || repos[0].DefaultBranch == nil || repos[0].DefaultBranch.State != CIFailure || !repos[0].DefaultBranch.ChecksHidden {
+		t.Errorf("repos = %+v", repos)
+	}
+
+	// Any other field error still fails the refresh, naming the field.
+	other := strings.Replace(hidden, `,"target","checkSuites","nodes",0]`, `]`, 1)
+	c = fakeServer(t, func(gqlRequest) string { return other })
+	if _, err := c.OwnerRepos(context.Background(), "me", OwnerOptions{IncludePrivate: true}); err == nil ||
+		!strings.Contains(err.Error(), "(at repositoryOwner.repositories.nodes.0.defaultBranchRef)") {
+		t.Errorf("err = %v", err)
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -37,6 +38,7 @@ fragment BranchCIFields on Ref {
   name
   target { ... on Commit {
     url committedDate
+    statusCheckRollup { state }
     status { contexts { context state targetUrl createdAt } }
     checkSuites(last: ` + checkSuitesPerCommit + `) { nodes {
       status conclusion createdAt updatedAt url
@@ -162,7 +164,7 @@ func (c *Client) OwnerRepos(ctx context.Context, login string, opt OwnerOptions)
 		if err != nil {
 			return nil, err
 		}
-		if len(errs) > 0 {
+		if errs = withoutHiddenCheckSuites(errs); len(errs) > 0 {
 			return nil, fmt.Errorf("github: %s", errs[0])
 		}
 		c.noteRateLimit(data.RateLimit)
@@ -324,6 +326,21 @@ func (e gqlError) String() string {
 		parts[i] = fmt.Sprint(p)
 	}
 	return e.Message + " (at " + strings.Join(parts, ".") + ")"
+}
+
+// withoutHiddenCheckSuites drops errors for check suites the token can't
+// read. Fine-grained tokens have no permission for check suites on private
+// repos, so GitHub returns those suites as null with an error, while the
+// commit's statusCheckRollup state stays readable. toBranchCI falls back to
+// that state, so these errors don't need to fail the query.
+func withoutHiddenCheckSuites(errs []gqlError) []gqlError {
+	var out []gqlError
+	for _, e := range errs {
+		if !slices.Contains(e.Path, any("checkSuites")) {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // query runs a GraphQL query and decodes "data" into out. GraphQL errors that

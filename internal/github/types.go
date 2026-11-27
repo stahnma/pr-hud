@@ -68,6 +68,11 @@ type BranchCI struct {
 	// when nothing has run.
 	State  string  `json:"state,omitempty"`
 	Checks []Check `json:"checks"`
+	// ChecksHidden is set when GitHub withheld some check suites from the
+	// token (fine-grained tokens can't read them on private repos). State
+	// then comes from the commit's overall check rollup, and Checks lists
+	// only what was visible.
+	ChecksHidden bool `json:"checks_hidden,omitempty"`
 }
 
 // Failing returns the checks that failed.
@@ -170,7 +175,10 @@ type gqlRef struct {
 	Target struct {
 		URL           string
 		CommittedDate time.Time
-		Status        *struct {
+		// StatusCheckRollup is the overall state of every check and status
+		// on the commit. It stays readable when check suites are not.
+		StatusCheckRollup *struct{ State string }
+		Status            *struct {
 			Contexts []struct {
 				Context   string
 				State     string
@@ -179,7 +187,8 @@ type gqlRef struct {
 			}
 		}
 		CheckSuites struct {
-			Nodes []gqlCheckSuite
+			// A nil node is a suite the token isn't allowed to read.
+			Nodes []*gqlCheckSuite
 		}
 	}
 }
@@ -222,6 +231,10 @@ func (g *gqlRef) toBranchCI() *BranchCI {
 	groups := map[key][]Check{}
 	var order []key
 	for _, s := range g.Target.CheckSuites.Nodes {
+		if s == nil {
+			b.ChecksHidden = true
+			continue
+		}
 		// Apps create a queued suite on every push whether or not they
 		// ever run anything; skip those. (Asking for checkRuns.totalCount
 		// instead would triple the query's cost.)
@@ -269,6 +282,12 @@ func (g *gqlRef) toBranchCI() *BranchCI {
 	for _, c := range b.Checks {
 		if b.State == "" || severity(c.State) > severity(b.State) {
 			b.State = c.State
+		}
+	}
+	// Hidden suites may hold the failure; the rollup covers them.
+	if r := g.Target.StatusCheckRollup; b.ChecksHidden && r != nil {
+		if s := statusState(r.State); b.State == "" || severity(s) > severity(b.State) {
+			b.State = s
 		}
 	}
 	if b.State == CINeutral {

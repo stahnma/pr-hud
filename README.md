@@ -34,10 +34,12 @@ access on the repos you want to see. Contents is needed to read a private
 repo's default branch.
 
 Fine-grained tokens can't read check suites on private repos (there is no
-fine-grained permission for them), so the **CI** tab's check-suite data for
-private repos needs a classic token with the `repo` scope. With a
-fine-grained token, refreshes that include private repos with check suites
-fail with "Resource not accessible by personal access token".
+fine-grained permission for them). For those repos the **CI** tab uses the
+head commit's overall check result instead, so a failing default branch
+still shows as failing, just without the per-workflow list. A classic token
+with the `repo` scope shows the full detail.
+
+A `GITHUB_TOKEN` in your shell environment wins over `.env`.
 The **Opened by me** tab covers PRs in public repos and in private repos the
 token can read.
 
