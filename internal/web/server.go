@@ -21,6 +21,9 @@ import (
 //go:embed templates/*.html
 var templateFS embed.FS
 
+//go:embed static/favicon.svg
+var faviconSVG []byte
+
 // Server is the HTTP front end over a hud.Store.
 type Server struct {
 	store *hud.Store
@@ -47,6 +50,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/v1/ci", s.apiCI)
 	mux.HandleFunc("POST /api/v1/refresh", s.apiRefresh)
 	mux.HandleFunc("GET /healthz", s.healthz)
+	mux.HandleFunc("GET /favicon.svg", favicon)
+	// Browsers ask for /favicon.ico on their own; point them at the SVG.
+	mux.Handle("GET /favicon.ico", http.RedirectHandler("/favicon.svg", http.StatusMovedPermanently))
 	return s.logRequests(mux)
 }
 
@@ -279,6 +285,12 @@ var funcs = template.FuncMap{
 }
 
 type ciStyle struct{ class, icon, label string }
+
+func favicon(w http.ResponseWriter, _ *http.Request) {
+	w.Header().Set("Content-Type", "image/svg+xml")
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	w.Write(faviconSVG)
+}
 
 func ci(state string) ciStyle {
 	switch state {
