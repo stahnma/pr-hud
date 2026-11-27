@@ -83,6 +83,21 @@ func TestIndex(t *testing.T) {
 	}
 }
 
+func TestFavicon(t *testing.T) {
+	h := newServer(t)
+
+	rec := get(t, h, "/favicon.svg")
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/svg+xml" || !strings.Contains(rec.Body.String(), "<svg") {
+		t.Errorf("favicon.svg: %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if rec := get(t, h, "/favicon.ico"); rec.Code != http.StatusMovedPermanently || rec.Header().Get("Location") != "/favicon.svg" {
+		t.Errorf("favicon.ico: %d -> %q", rec.Code, rec.Header().Get("Location"))
+	}
+	if !strings.Contains(get(t, h, "/").Body.String(), `<link rel="icon" href="/favicon.svg"`) {
+		t.Error("page doesn't link the favicon")
+	}
+}
+
 func TestIndexAllClear(t *testing.T) {
 	body := get(t, newServer(t, idle), "/").Body.String()
 	if !strings.Contains(body, "All clear") {

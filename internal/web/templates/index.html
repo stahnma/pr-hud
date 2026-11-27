@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <meta http-equiv="refresh" content="{{if .View}}300{{else}}5{{end}}">
 <title>{{with .View}}{{$n := .Summary.OpenPRs}}{{if eq $.Tab "authored"}}{{$n = .Summary.AuthoredPRs}}{{else if eq $.Tab "ci"}}{{$n = .Summary.CIProblems}}{{end}}{{if $n}}({{$n}}) {{else}}✓ {{end}}{{end}}{{if eq .Tab "authored"}}My PRs · {{else if eq .Tab "ci"}}CI · {{end}}PR HUD</title>
 <style>
