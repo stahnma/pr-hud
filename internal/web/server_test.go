@@ -162,13 +162,13 @@ func TestAuthoredTab(t *testing.T) {
 	if strings.Contains(body, "me/busy</a>") {
 		t.Error("authored page shows repo view")
 	}
-	if strings.Contains(body, "<span>by me</span>") {
+	if strings.Contains(body, ">me</a></span>") {
 		t.Error("authored page shows the author")
 	}
 
 	// The repos tab doesn't show authored PRs but links to them, and keeps authors.
 	body = get(t, h, "/").Body.String()
-	if strings.Contains(body, "Fix the thing") || !strings.Contains(body, `href="/authored"`) || !strings.Contains(body, "<span>by alice</span>") {
+	if strings.Contains(body, "Fix the thing") || !strings.Contains(body, `href="/authored"`) || !strings.Contains(body, `href="https://github.com/alice">alice</a>`) {
 		t.Error("repos tab should link to, not show, authored PRs")
 	}
 }
@@ -222,7 +222,7 @@ func TestCITab(t *testing.T) {
 	for _, want := range []string{
 		"(2) CI · PR HUD", `href="https://github.com/me/broken/actions"`, "nightly", ">scheduled<",
 		`href="https://github.com/me/broken/actions/runs/7"`, "failure just now", // failing check and its run
-		"Add &lt;feature&gt;", "by alice", // alice's failing PR on me/busy
+		"Add &lt;feature&gt;", `href="https://github.com/alice">alice</a>`, // alice's failing PR on me/busy
 		"1 repository passing on the default branch", "1 repository with no checks",
 		`class="n bad">2<`, `name="tab" value="ci"`,
 	} {
@@ -261,5 +261,21 @@ func TestAPICI(t *testing.T) {
 	}
 	if resp.Summary.CIFailingRepos != 1 || resp.Summary.FailingPRs != 1 {
 		t.Errorf("summary = %+v", resp.Summary)
+	}
+}
+
+func TestAuthorURL(t *testing.T) {
+	for _, tc := range []struct {
+		pr   github.PullRequest
+		want string
+	}{
+		{github.PullRequest{Author: "alice", URL: "https://github.com/me/a/pull/1"}, "https://github.com/alice"},
+		{github.PullRequest{Author: "dependabot", AuthorIsBot: true, URL: "https://github.com/me/a/pull/2"}, "https://github.com/apps/dependabot"},
+		{github.PullRequest{Author: "renovate[bot]", AuthorIsBot: true}, "https://github.com/apps/renovate"},
+		{github.PullRequest{Author: "bob", URL: "https://ghe.example.com/org/r/pull/3"}, "https://ghe.example.com/bob"},
+	} {
+		if got := authorURL(tc.pr); got != tc.want {
+			t.Errorf("authorURL(%s) = %q, want %q", tc.pr.Author, got, tc.want)
+		}
 	}
 }

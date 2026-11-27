@@ -10,6 +10,7 @@ import (
 	"html/template"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"time"
@@ -242,10 +243,11 @@ var funcs = template.FuncMap{
 		}
 		return many
 	},
-	"ciClass": func(s string) string { return ci(s).class },
-	"ciIcon":  func(s string) string { return ci(s).icon },
-	"ciLabel": func(s string) string { return ci(s).label },
-	"lower":   strings.ToLower,
+	"ciClass":   func(s string) string { return ci(s).class },
+	"ciIcon":    func(s string) string { return ci(s).icon },
+	"ciLabel":   func(s string) string { return ci(s).label },
+	"lower":     strings.ToLower,
+	"authorURL": authorURL,
 	// eventLabel names what triggered a workflow run.
 	"eventLabel": func(e string) string {
 		switch e {
@@ -279,6 +281,19 @@ var funcs = template.FuncMap{
 }
 
 type ciStyle struct{ class, icon, label string }
+
+// authorURL links to a PR author's GitHub profile, on the same host as the
+// PR (so GitHub Enterprise works). Bots live under /apps/.
+func authorURL(p github.PullRequest) string {
+	base := "https://github.com"
+	if u, err := url.Parse(p.URL); err == nil && u.Scheme != "" && u.Host != "" {
+		base = u.Scheme + "://" + u.Host
+	}
+	if p.AuthorIsBot {
+		return base + "/apps/" + url.PathEscape(strings.TrimSuffix(p.Author, "[bot]"))
+	}
+	return base + "/" + url.PathEscape(p.Author)
+}
 
 func ci(state string) ciStyle {
 	switch state {

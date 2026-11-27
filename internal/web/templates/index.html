@@ -66,6 +66,8 @@ ul.prs li { padding: 8px 0 8px 22px; border-top: 1px solid var(--border); positi
 .ci-pending { color: var(--warn); }
 .ci-none { color: var(--border); }
 .pr-title { font-weight: 500; }
+.sub a.author { color: inherit; }
+.sub a.author:hover { color: var(--accent); }
 .num { color: var(--muted); }
 .sub { color: var(--muted); font-size: 13px; display: flex; flex-wrap: wrap; gap: 2px 12px; margin-top: 2px; }
 .review-approved { color: var(--ok); }
@@ -245,7 +247,7 @@ footer { margin-top: 28px; color: var(--muted); font-size: 12px; text-align: cen
 {{if .Draft}}<span class="tag">draft</span>{{end}}
 {{if .AuthorIsBot}}<span class="tag">bot</span>{{end}}
 <div class="sub">
-  {{with .Author}}<span>by {{.}}</span>{{end}}
+  {{with .Author}}<span>by <a class="author" target="_blank" rel="noopener" href="{{authorURL $}}">{{.}}</a></span>{{end}}
   <span title="{{abs .CreatedAt}}">opened {{ago .CreatedAt}}</span>
   <span title="{{abs .UpdatedAt}}">updated {{ago .UpdatedAt}}</span>
   {{with .ReviewDecision}}<span class="{{reviewClass .}}">{{reviewLabel .}}</span>{{end}}
